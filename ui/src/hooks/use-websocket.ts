@@ -69,7 +69,9 @@ export function useWebSocket() {
     }
 
     setStatus('connecting');
-    const ws = new WebSocket(`ws://${window.location.host}`);
+    // Use wss:// for HTTPS, ws:// for HTTP
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
