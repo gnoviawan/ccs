@@ -24,6 +24,12 @@ import { ProviderOAuthConfig } from './auth-types';
 import { getTimeoutTroubleshooting, showStep } from './environment-detector';
 import { isAuthenticated, registerAccountFromToken } from './token-manager';
 import { deviceCodeEvents, type DeviceCodePrompt } from '../device-code-handler';
+import {
+  registerRemoteOAuthSession,
+  REMOTE_OAUTH_TIMEOUT_MS,
+  type RemoteOAuthPrompt,
+} from '../remote-oauth-handler';
+import { isDeployedMode } from './environment-detector';
 import { OAUTH_FLOW_TYPES } from '../../management';
 import {
   registerAuthSession,
@@ -186,10 +192,40 @@ async function handleStdout(
   if (!isDeviceCodeFlow && !state.urlDisplayed) {
     const urlMatch = output.match(/https?:\/\/[^\s]+/);
     if (urlMatch) {
-      console.log('');
-      console.log(info(`${options.oauthConfig.displayName} OAuth URL:`));
-      console.log(`    ${urlMatch[0]}`);
-      console.log('');
+      const oauthUrl = urlMatch[0];
+
+      // In deployed mode with UI request, emit remote OAuth event instead of just displaying
+      if (!options.isCLI && isDeployedMode() && options.callbackPort) {
+        log(`Deployed mode detected - emitting remote OAuth URL for UI relay`);
+
+        const remotePrompt: RemoteOAuthPrompt = {
+          sessionId: state.sessionId,
+          provider: options.provider,
+          oauthUrl,
+          callbackPort: options.callbackPort,
+          expiresAt: Date.now() + REMOTE_OAUTH_TIMEOUT_MS,
+        };
+
+        registerRemoteOAuthSession(remotePrompt);
+
+        // Still display URL in console for CLI users
+        console.log('');
+        console.log(info(`${options.oauthConfig.displayName} OAuth URL (Remote Mode):`));
+        console.log(`    ${oauthUrl}`);
+        console.log('');
+        console.log(
+          info(
+            'Complete authentication in your browser, then paste the callback URL in the dashboard.'
+          )
+        );
+      } else {
+        // Normal mode - just display URL
+        console.log('');
+        console.log(info(`${options.oauthConfig.displayName} OAuth URL:`));
+        console.log(`    ${oauthUrl}`);
+        console.log('');
+      }
+
       state.urlDisplayed = true;
     }
   }

@@ -32,6 +32,7 @@ export {
   killProcessOnPort,
   getTimeoutTroubleshooting,
   showStep,
+  isDeployedMode,
 } from './environment-detector';
 
 // OAuth handling

@@ -130,3 +130,31 @@ export function showStep(
   const statusIcon = status === 'ok' ? '[OK]' : status === 'fail' ? '[X]' : '[..]';
   console.log(`${statusIcon} [${step}/${total}] ${message}`);
 }
+
+/**
+ * Check if CCS is running in deployed mode (behind a reverse proxy)
+ *
+ * Deployed mode is detected when:
+ * - CCS_PROXY_HOST is set and not localhost/127.0.0.1
+ *
+ * In deployed mode:
+ * - OAuth flows should use --no-browser flag
+ * - OAuth URLs should be sent to UI instead of opening browser
+ * - Callback relay is needed for OAuth completion
+ */
+export function isDeployedMode(): boolean {
+  const proxyHost = process.env.CCS_PROXY_HOST;
+
+  if (!proxyHost) {
+    return false;
+  }
+
+  const normalizedHost = proxyHost.toLowerCase().trim();
+
+  // Not deployed if explicitly set to localhost
+  if (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1') {
+    return false;
+  }
+
+  return true;
+}

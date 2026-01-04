@@ -13,6 +13,7 @@ import {
   type ProjectSelectionPrompt,
 } from '../cliproxy/project-selection-handler';
 import { deviceCodeEvents, type DeviceCodePrompt } from '../cliproxy/device-code-handler';
+import { remoteOAuthEvents, type RemoteOAuthPrompt } from '../cliproxy/remote-oauth-handler';
 
 export interface WSMessage {
   type: string;
@@ -155,6 +156,43 @@ export function setupWebSocket(wss: WebSocketServer): { cleanup: () => void } {
     });
   };
 
+  // Listen for remote OAuth events and broadcast to clients
+  const handleRemoteOAuthUrlDetected = (prompt: RemoteOAuthPrompt): void => {
+    console.log(info(`[WS] Broadcasting remote OAuth URL (session: ${prompt.sessionId})`));
+    broadcast({
+      type: 'remoteOAuthUrlReceived',
+      ...prompt,
+      timestamp: Date.now(),
+    });
+  };
+
+  const handleRemoteOAuthCompleted = (sessionId: string): void => {
+    console.log(info(`[WS] Remote OAuth completed (session: ${sessionId})`));
+    broadcast({
+      type: 'remoteOAuthCompleted',
+      sessionId,
+      timestamp: Date.now(),
+    });
+  };
+
+  const handleRemoteOAuthFailed = (data: { sessionId: string; error?: string }): void => {
+    console.log(info(`[WS] Remote OAuth failed (session: ${data.sessionId})`));
+    broadcast({
+      type: 'remoteOAuthFailed',
+      ...data,
+      timestamp: Date.now(),
+    });
+  };
+
+  const handleRemoteOAuthExpired = (sessionId: string): void => {
+    console.log(info(`[WS] Remote OAuth expired (session: ${sessionId})`));
+    broadcast({
+      type: 'remoteOAuthExpired',
+      sessionId,
+      timestamp: Date.now(),
+    });
+  };
+
   // Subscribe to project selection events
   projectSelectionEvents.on('selection:required', handleProjectSelectionRequired);
   projectSelectionEvents.on('selection:timeout', handleProjectSelectionTimeout);
@@ -165,6 +203,12 @@ export function setupWebSocket(wss: WebSocketServer): { cleanup: () => void } {
   deviceCodeEvents.on('deviceCode:completed', handleDeviceCodeCompleted);
   deviceCodeEvents.on('deviceCode:failed', handleDeviceCodeFailed);
   deviceCodeEvents.on('deviceCode:expired', handleDeviceCodeExpired);
+
+  // Subscribe to remote OAuth events
+  remoteOAuthEvents.on('remoteOAuth:urlDetected', handleRemoteOAuthUrlDetected);
+  remoteOAuthEvents.on('remoteOAuth:completed', handleRemoteOAuthCompleted);
+  remoteOAuthEvents.on('remoteOAuth:failed', handleRemoteOAuthFailed);
+  remoteOAuthEvents.on('remoteOAuth:expired', handleRemoteOAuthExpired);
 
   // Cleanup function
   const cleanup = (): void => {
@@ -180,6 +224,12 @@ export function setupWebSocket(wss: WebSocketServer): { cleanup: () => void } {
     deviceCodeEvents.off('deviceCode:completed', handleDeviceCodeCompleted);
     deviceCodeEvents.off('deviceCode:failed', handleDeviceCodeFailed);
     deviceCodeEvents.off('deviceCode:expired', handleDeviceCodeExpired);
+
+    // Unsubscribe from remote OAuth events
+    remoteOAuthEvents.off('remoteOAuth:urlDetected', handleRemoteOAuthUrlDetected);
+    remoteOAuthEvents.off('remoteOAuth:completed', handleRemoteOAuthCompleted);
+    remoteOAuthEvents.off('remoteOAuth:failed', handleRemoteOAuthFailed);
+    remoteOAuthEvents.off('remoteOAuth:expired', handleRemoteOAuthExpired);
 
     clients.forEach((client) => {
       client.close(1001, 'Server shutting down');

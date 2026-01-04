@@ -17,6 +17,7 @@ export { PrivacyToggle } from './privacy-toggle';
 export { ProjectSelectionDialog } from './project-selection-dialog';
 export { ProviderIcon } from './provider-icon';
 export { QuickCommands } from './quick-commands';
+export { RemoteOAuthDialog } from './remote-oauth-dialog';
 export { SettingsDialog } from './settings-dialog';
 export { SponsorButton } from './sponsor-button';
 export { StatCard } from './stat-card';

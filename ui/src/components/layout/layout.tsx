@@ -13,8 +13,10 @@ import { ClaudeKitBadge } from '@/components/shared/claudekit-badge';
 import { SponsorButton } from '@/components/shared/sponsor-button';
 import { ProjectSelectionDialog } from '@/components/shared/project-selection-dialog';
 import { DeviceCodeDialog } from '@/components/shared/device-code-dialog';
+import { RemoteOAuthDialog } from '@/components/shared/remote-oauth-dialog';
 import { useProjectSelection } from '@/hooks/use-project-selection';
 import { useDeviceCode } from '@/hooks/use-device-code';
+import { useRemoteOAuth } from '@/hooks/use-remote-oauth';
 
 function PageLoader() {
   return (
@@ -28,6 +30,7 @@ function PageLoader() {
 export function Layout() {
   const { isOpen, prompt, onSelect, onClose } = useProjectSelection();
   const deviceCode = useDeviceCode();
+  const remoteOAuth = useRemoteOAuth();
 
   return (
     <SidebarProvider>
@@ -78,6 +81,23 @@ export function Layout() {
           userCode={deviceCode.prompt.userCode}
           verificationUrl={deviceCode.prompt.verificationUrl}
           expiresAt={deviceCode.prompt.expiresAt}
+        />
+      )}
+
+      {/* Global remote OAuth dialog for deployed mode (Authorization Code flows via relay) */}
+      {remoteOAuth.prompt && (
+        <RemoteOAuthDialog
+          open={remoteOAuth.isOpen}
+          onClose={remoteOAuth.onClose}
+          sessionId={remoteOAuth.prompt.sessionId}
+          provider={remoteOAuth.prompt.provider}
+          oauthUrl={remoteOAuth.prompt.oauthUrl}
+          callbackPort={remoteOAuth.prompt.callbackPort}
+          expiresAt={remoteOAuth.prompt.expiresAt}
+          isSubmitting={remoteOAuth.isSubmitting}
+          error={remoteOAuth.error}
+          onOpenUrl={remoteOAuth.onOpenUrl}
+          onSubmitCallback={remoteOAuth.onSubmitCallback}
         />
       )}
     </SidebarProvider>

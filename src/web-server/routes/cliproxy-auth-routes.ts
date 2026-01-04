@@ -30,6 +30,11 @@ import { fetchRemoteAuthStatus } from '../../cliproxy/remote-auth-fetcher';
 import { loadOrCreateUnifiedConfig } from '../../config/unified-config-loader';
 import { tryKiroImport } from '../../cliproxy/auth/kiro-import';
 import { getProviderTokenDir } from '../../cliproxy/auth/token-manager';
+import {
+  submitCallbackUrl,
+  completeRemoteOAuthSession,
+  failRemoteOAuthSession,
+} from '../../cliproxy/remote-oauth-handler';
 import type { CLIProxyProvider } from '../../cliproxy/types';
 
 const router = Router();
@@ -430,6 +435,89 @@ router.post('/kiro/import', async (_req: Request, res: Response): Promise<void> 
     }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+/**
+ * POST /api/cliproxy/auth/callback-relay - Relay OAuth callback from user's browser
+ *
+ * In deployed mode, OAuth callbacks go to localhost which the user can't access.
+ * This endpoint accepts the callback URL that the user copies from their browser
+ * and relays it to the CLIProxyAPI callback server running inside the container.
+ */
+router.post('/callback-relay', async (req: Request, res: Response): Promise<void> => {
+  const { sessionId, callbackUrl } = req.body;
+
+  // Validate required fields
+  if (!sessionId) {
+    res.status(400).json({ error: 'Missing required field: sessionId' });
+    return;
+  }
+
+  if (!callbackUrl) {
+    res.status(400).json({ error: 'Missing required field: callbackUrl' });
+    return;
+  }
+
+  // Parse callback URL and extract code/state - also validates session exists
+  const parsed = submitCallbackUrl(sessionId, callbackUrl);
+  if (!parsed) {
+    res.status(400).json({
+      error:
+        'Invalid callback URL or session not found. Make sure to copy the full URL from your browser address bar.',
+      hint: 'The URL should contain ?code=... parameter. Session may have expired.',
+    });
+    return;
+  }
+
+  const { code, state, callbackPort } = parsed;
+
+  // Validate callbackPort is a valid port number
+  if (!callbackPort || callbackPort < 1 || callbackPort > 65535) {
+    failRemoteOAuthSession(sessionId, 'Invalid callback port');
+    res.status(500).json({
+      error: 'Invalid callback port configuration',
+      hint: 'The OAuth session was created with an invalid port. Try starting the auth flow again.',
+    });
+    return;
+  }
+
+  try {
+    // Relay the callback to CLIProxyAPI's internal callback server
+    // This works because localhost inside Docker container is the container itself
+    const relayUrl = `http://localhost:${callbackPort}/oauth-callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+
+    const response = await fetch(relayUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'CCS-Callback-Relay/1.0',
+      },
+    });
+
+    if (response.ok) {
+      // Mark session as complete
+      completeRemoteOAuthSession(sessionId);
+      res.json({
+        success: true,
+        message: 'OAuth callback relayed successfully',
+      });
+    } else {
+      const errorText = await response.text();
+      failRemoteOAuthSession(sessionId, `Callback relay failed: ${response.status}`);
+      res.status(502).json({
+        error: 'Failed to relay callback to CLIProxyAPI',
+        details: errorText,
+        hint: 'The CLIProxyAPI callback server may have timed out. Try starting the auth flow again.',
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    failRemoteOAuthSession(sessionId, message);
+    res.status(502).json({
+      error: 'Failed to connect to CLIProxyAPI callback server',
+      details: message,
+      hint: 'The callback server may have shut down. Try starting the auth flow again.',
+    });
   }
 });
 
