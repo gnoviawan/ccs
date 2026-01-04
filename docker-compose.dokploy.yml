@@ -1,0 +1,92 @@
+# CCS - Claude Code Switch
+# Docker Compose for Dokploy Deployment
+#
+# Deployment Steps:
+# 1. Create a new "Compose" project in Dokploy
+# 2. Use Git repository source or paste this file content
+# 3. Configure domains in Dokploy UI for each service
+# 4. Set environment variables in Dokploy UI
+# 5. Deploy!
+
+services:
+  # CCS Dashboard Server
+  ccs-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    volumes:
+      - ccs-data:/data/.ccs
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - CCS_CONFIG_DIR=${CCS_CONFIG_DIR:-/data/.ccs}
+      - CCS_DATA_DIR=${CCS_DATA_DIR:-/data/.ccs}
+      # Dashboard settings
+      - CCS_DASHBOARD_HOST=${CCS_DASHBOARD_HOST:-0.0.0.0}
+      - CCS_DASHBOARD_PORT=${CCS_DASHBOARD_PORT:-3000}
+      # CLIProxy settings - connect to cliproxy service
+      - CCS_PROXY_HOST=${CCS_PROXY_HOST:-cliproxy}
+      - CCS_PROXY_PORT=${CCS_PROXY_PORT:-8317}
+      # Auth token for remote proxy access
+      - CCS_PROXY_AUTH_TOKEN=${CCS_PROXY_AUTH_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      # Traefik labels for Dokploy routing (dashboard UI)
+      - "traefik.enable=true"
+      - "traefik.http.routers.ccs-dashboard.rule=Host(`${CCS_DOMAIN:-ccs.example.com}`)"
+      - "traefik.http.routers.ccs-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.ccs-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ccs-dashboard.loadbalancer.server.port=3000"
+    networks:
+      - dokploy-network
+      - ccs-internal
+
+  # CLIProxy API as separate service for OAuth providers
+  cliproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.cliproxy
+    restart: unless-stopped
+    expose:
+      - "8317"
+    volumes:
+      - cliproxy-data:/data
+    environment:
+      - PORT=${CLIPROXY_PORT:-8317}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8317/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      # Traefik labels for Dokploy routing (CLIProxy API)
+      - "traefik.enable=true"
+      - "traefik.http.routers.ccs-cliproxy.rule=Host(`${CLIPROXY_DOMAIN:-api.ccs.example.com}`)"
+      - "traefik.http.routers.ccs-cliproxy.entrypoints=websecure"
+      - "traefik.http.routers.ccs-cliproxy.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ccs-cliproxy.loadbalancer.server.port=8317"
+    networks:
+      - dokploy-network
+      - ccs-internal
+
+volumes:
+  ccs-data:
+    driver: local
+  cliproxy-data:
+    driver: local
+
+networks:
+  # Dokploy's external network for Traefik routing
+  dokploy-network:
+    external: true
+  # Internal network for service-to-service communication
+  ccs-internal:
+    driver: bridge

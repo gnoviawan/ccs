@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+ui/node_modules/
+
+# Build outputs (will be built in container)
+dist/
+ui/dist/
+
+# Development files
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+tests/
+coverage/
+*.test.ts
+*.spec.ts
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# BMAD workflows (development only)
+_bmad/
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files (should be passed via env vars)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# TypeScript build info
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Package tarballs
+*.tgz
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Assets (optional - uncomment if you want smaller image)
+# assets/

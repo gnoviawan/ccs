@@ -1,0 +1,75 @@
+# CCS - Claude Code Switch
+# Docker Compose for Dashboard + CLIProxy API
+
+services:
+  # CCS Dashboard Server
+  ccs-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CCS_CONTAINER_NAME:-ccs-dashboard}
+    restart: unless-stopped
+    ports:
+      # Dashboard UI
+      - "${CCS_DASHBOARD_PORT:-3000}:3000"
+      # CLIProxy API (for remote Claude Code clients)
+      - "${CCS_PROXY_EXTERNAL_PORT:-8318}:8317"
+    volumes:
+      # Persistent configuration storage
+      - ccs-data:/data/.ccs
+      # Optional: Mount host config for development
+      # - ~/.ccs:/data/.ccs
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - CCS_CONFIG_DIR=${CCS_CONFIG_DIR:-/data/.ccs}
+      - CCS_DATA_DIR=${CCS_DATA_DIR:-/data/.ccs}
+      # Dashboard settings
+      - CCS_DASHBOARD_HOST=${CCS_DASHBOARD_HOST:-0.0.0.0}
+      - CCS_DASHBOARD_PORT=${CCS_DASHBOARD_PORT:-3000}
+      # CLIProxy settings (for remote clients)
+      - CCS_PROXY_HOST=${CCS_PROXY_HOST:-cliproxy}
+      - CCS_PROXY_PORT=${CCS_PROXY_PORT:-8317}
+      # Optional: Auth token for remote proxy access
+      - CCS_PROXY_AUTH_TOKEN=${CCS_PROXY_AUTH_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ccs-network
+
+  # CLIProxy API as separate service for OAuth providers
+  cliproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.cliproxy
+    container_name: ${CLIPROXY_CONTAINER_NAME:-ccs-cliproxy}
+    restart: unless-stopped
+    ports:
+      # CLIProxy API port
+      - "${CLIPROXY_EXTERNAL_PORT:-8319}:8317"
+    volumes:
+      # Persistent storage for OAuth tokens and config
+      - cliproxy-data:/data
+    environment:
+      - PORT=${CLIPROXY_PORT:-8317}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8317/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ccs-network
+
+volumes:
+  ccs-data:
+    driver: local
+  cliproxy-data:
+    driver: local
+
+networks:
+  ccs-network:
+    driver: bridge
