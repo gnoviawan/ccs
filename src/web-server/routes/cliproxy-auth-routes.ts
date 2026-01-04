@@ -487,12 +487,21 @@ router.post('/callback-relay', async (req: Request, res: Response): Promise<void
     // This works because localhost inside Docker container is the container itself
     const relayUrl = `http://localhost:${callbackPort}/oauth-callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
 
+    console.log(
+      `[callback-relay] Relaying OAuth callback to: ${relayUrl.replace(/code=[^&]+/, 'code=***')}`
+    );
+
     const response = await fetch(relayUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'CCS-Callback-Relay/1.0',
       },
     });
+
+    const responseText = await response.text();
+    console.log(
+      `[callback-relay] CLIProxyAPI response: ${response.status} - ${responseText.substring(0, 200)}`
+    );
 
     if (response.ok) {
       // Mark session as complete
@@ -502,16 +511,16 @@ router.post('/callback-relay', async (req: Request, res: Response): Promise<void
         message: 'OAuth callback relayed successfully',
       });
     } else {
-      const errorText = await response.text();
       failRemoteOAuthSession(sessionId, `Callback relay failed: ${response.status}`);
       res.status(502).json({
         error: 'Failed to relay callback to CLIProxyAPI',
-        details: errorText,
+        details: responseText,
         hint: 'The CLIProxyAPI callback server may have timed out. Try starting the auth flow again.',
       });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+    console.log(`[callback-relay] Error relaying callback: ${message}`);
     failRemoteOAuthSession(sessionId, message);
     res.status(502).json({
       error: 'Failed to connect to CLIProxyAPI callback server',
