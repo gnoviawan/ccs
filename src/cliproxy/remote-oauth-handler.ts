@@ -30,6 +30,8 @@ export interface RemoteOAuthPrompt {
   provider: string;
   oauthUrl: string;
   callbackPort: number;
+  /** The callback path extracted from redirect_uri (e.g., /oauth-callback or /oauth2callback) */
+  callbackPath: string;
   expiresAt: number;
 }
 
@@ -141,7 +143,7 @@ export function parseCallbackUrl(callbackUrl: string): { code: string; state: st
 export function submitCallbackUrl(
   sessionId: string,
   callbackUrl: string
-): { code: string; state: string; callbackPort: number } | null {
+): { code: string; state: string; callbackPort: number; callbackPath: string } | null {
   const session = pendingSessions.get(sessionId);
 
   if (!session) {
@@ -157,6 +159,7 @@ export function submitCallbackUrl(
   return {
     ...parsed,
     callbackPort: session.prompt.callbackPort,
+    callbackPath: session.prompt.callbackPath,
   };
 }
 

@@ -475,7 +475,7 @@ router.post('/callback-relay', async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const { code, state, callbackPort } = parsed;
+  const { code, state, callbackPort, callbackPath } = parsed;
 
   // Validate callbackPort is a valid port number
   if (!callbackPort || callbackPort < 1 || callbackPort > 65535) {
@@ -489,8 +489,9 @@ router.post('/callback-relay', async (req: Request, res: Response): Promise<void
 
   try {
     // Relay the callback to CLIProxyAPI's internal callback server
+    // Use the callback path extracted from redirect_uri (e.g., /oauth-callback or /oauth2callback)
     // This works because localhost inside Docker container is the container itself
-    const relayUrl = `http://localhost:${callbackPort}/oauth-callback?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+    const relayUrl = `http://localhost:${callbackPort}${callbackPath}?code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
 
     console.log(
       `[callback-relay] Relaying OAuth callback to: ${relayUrl.replace(/code=[^&]+/, 'code=***')}`

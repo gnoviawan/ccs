@@ -198,11 +198,27 @@ async function handleStdout(
       if (!options.isCLI && isDeployedMode() && options.callbackPort) {
         log(`Deployed mode detected - emitting remote OAuth URL for UI relay`);
 
+        // Extract callback path from redirect_uri in OAuth URL
+        // Different providers use different paths: /oauth-callback, /oauth2callback, etc.
+        let callbackPath = '/oauth-callback'; // default fallback
+        try {
+          const parsedOAuthUrl = new URL(oauthUrl);
+          const redirectUri = parsedOAuthUrl.searchParams.get('redirect_uri');
+          if (redirectUri) {
+            const parsedRedirectUri = new URL(redirectUri);
+            callbackPath = parsedRedirectUri.pathname;
+            log(`Extracted callback path from redirect_uri: ${callbackPath}`);
+          }
+        } catch (_e) {
+          log(`Failed to parse callback path, using default: ${callbackPath}`);
+        }
+
         const remotePrompt: RemoteOAuthPrompt = {
           sessionId: state.sessionId,
           provider: options.provider,
           oauthUrl,
           callbackPort: options.callbackPort,
+          callbackPath,
           expiresAt: Date.now() + REMOTE_OAUTH_TIMEOUT_MS,
         };
 
