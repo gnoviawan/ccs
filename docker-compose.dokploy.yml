@@ -59,7 +59,10 @@ services:
     expose:
       - "8317"
     volumes:
-      - cliproxy-data:/data
+      # Share auth directory with ccs-dashboard for OAuth tokens
+      # Dashboard saves tokens to /data/.ccs/cliproxy/auth/
+      # CLIProxy expects tokens in /data/auth/ (configured in Dockerfile.cliproxy)
+      - ccs-data:/data/.ccs
     environment:
       - PORT=${CLIPROXY_PORT:-8317}
     healthcheck:
@@ -81,8 +84,6 @@ services:
 
 volumes:
   ccs-data:
-    driver: local
-  cliproxy-data:
     driver: local
 
 networks:

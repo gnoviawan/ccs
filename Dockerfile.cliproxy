@@ -66,8 +66,8 @@ quota-exceeded:
 api-keys:
   - "ccs-internal-managed"
 
-# OAuth tokens directory
-auth-dir: "/data/auth"
+# OAuth tokens directory (shared with ccs-dashboard via volume mount)
+auth-dir: "/data/.ccs/cliproxy/auth"
 EOF
 
 # Environment variables
