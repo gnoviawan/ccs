@@ -48,7 +48,7 @@ request-log: false
 usage-statistics-enabled: true
 remote-management:
   allow-remote: true
-  secret-key: "ccs-docker-secret"
+  secret-key: "ccs"
   disable-control-panel: false
 
 # =============================================================================
@@ -64,7 +64,7 @@ quota-exceeded:
 # Authentication
 # =============================================================================
 api-keys:
-  - "ccs-internal-key"
+  - "ccs-internal-managed"
 
 # OAuth tokens directory
 auth-dir: "/data/auth"
