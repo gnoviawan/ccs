@@ -42,3 +42,6 @@ logs/
 
 # Test coverage
 ui/coverage/
+/_bmad
+/docs
+/.claude
