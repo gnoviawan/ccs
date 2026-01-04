@@ -9,8 +9,10 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import cookieParser from 'cookie-parser';
 import { WebSocketServer } from 'ws';
 import { setupWebSocket } from './websocket';
+import { authMiddleware, isAuthEnabled } from './auth-middleware';
 
 export interface ServerOptions {
   port: number;
@@ -32,8 +34,23 @@ export async function startServer(options: ServerOptions): Promise<ServerInstanc
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
+  // Cookie parsing (required for auth)
+  app.use(cookieParser());
+
   // JSON body parsing
   app.use(express.json());
+
+  // Auth routes (must be before auth middleware)
+  const { authRoutes } = await import('./routes/auth-routes');
+  app.use('/api/auth', authRoutes);
+
+  // Authentication middleware (protects all routes below when enabled)
+  app.use(authMiddleware());
+
+  // Log auth status on startup
+  if (isAuthEnabled()) {
+    console.log('[i] Dashboard authentication enabled');
+  }
 
   // REST API routes (modularized)
   const { apiRoutes } = await import('./routes/index');

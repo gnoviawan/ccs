@@ -28,6 +28,8 @@ services:
       # Dashboard settings
       - CCS_DASHBOARD_HOST=${CCS_DASHBOARD_HOST:-0.0.0.0}
       - CCS_DASHBOARD_PORT=${CCS_DASHBOARD_PORT:-3000}
+      # Dashboard authentication (optional - leave empty to disable)
+      - CCS_DASHBOARD_PASSWORD=${CCS_DASHBOARD_PASSWORD:-}
       # CLIProxy settings - connect to cliproxy service
       - CCS_PROXY_HOST=${CCS_PROXY_HOST:-cliproxy}
       - CCS_PROXY_PORT=${CCS_PROXY_PORT:-8317}

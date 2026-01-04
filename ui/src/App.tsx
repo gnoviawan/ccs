@@ -5,10 +5,13 @@ import { Toaster } from 'sonner';
 import { queryClient } from '@/lib/query-client';
 import { ThemeProvider } from '@/components/layout/theme-provider';
 import { PrivacyProvider } from '@/contexts/privacy-context';
+import { AuthProvider } from '@/contexts/auth-context';
+import { ProtectedRoute } from '@/components/auth/protected-route';
 import { Layout } from '@/components/layout/layout';
 
-// Eager load: HomePage (initial route)
+// Eager load: HomePage (initial route) and LoginPage
 import { HomePage } from '@/pages';
+import { LoginPage } from '@/pages/login';
 
 // Lazy load: heavy pages with charts or complex dependencies
 const AnalyticsPage = lazy(() =>
@@ -36,23 +39,35 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
         <PrivacyProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/providers" element={<ApiPage />} />
-                <Route path="/cliproxy" element={<CliproxyPage />} />
-                <Route path="/cliproxy/control-panel" element={<CliproxyControlPanelPage />} />
-                <Route path="/copilot" element={<CopilotPage />} />
-                <Route path="/accounts" element={<AccountsPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/health" element={<HealthPage />} />
-                <Route path="/shared" element={<SharedPage />} />
-              </Route>
-            </Routes>
-            <Toaster position="top-right" />
-          </BrowserRouter>
+          <AuthProvider>
+            <BrowserRouter>
+              <Routes>
+                {/* Login page - no auth required */}
+                <Route path="/login" element={<LoginPage />} />
+
+                {/* Protected routes */}
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <Layout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route path="/providers" element={<ApiPage />} />
+                  <Route path="/cliproxy" element={<CliproxyPage />} />
+                  <Route path="/cliproxy/control-panel" element={<CliproxyControlPanelPage />} />
+                  <Route path="/copilot" element={<CopilotPage />} />
+                  <Route path="/accounts" element={<AccountsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/health" element={<HealthPage />} />
+                  <Route path="/shared" element={<SharedPage />} />
+                </Route>
+              </Routes>
+              <Toaster position="top-right" />
+            </BrowserRouter>
+          </AuthProvider>
         </PrivacyProvider>
       </ThemeProvider>
     </QueryClientProvider>
