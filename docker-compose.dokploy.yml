@@ -21,6 +21,8 @@ services:
       - ccs-data:/data/.ccs
     environment:
       - NODE_ENV=${NODE_ENV:-production}
+      # CCS uses CCS_HOME to determine base directory for .ccs folder
+      - CCS_HOME=${CCS_HOME:-/data}
       - CCS_CONFIG_DIR=${CCS_CONFIG_DIR:-/data/.ccs}
       - CCS_DATA_DIR=${CCS_DATA_DIR:-/data/.ccs}
       # Dashboard settings

@@ -59,6 +59,10 @@ RUN mkdir -p /data/.ccs
 
 # Environment variables
 ENV NODE_ENV=production
+# CCS uses CCS_HOME to determine the base directory for .ccs folder
+# Setting CCS_HOME=/data makes ~/.ccs resolve to /data/.ccs
+ENV CCS_HOME=/data
+# Legacy env vars for compatibility (some code may check these)
 ENV CCS_CONFIG_DIR=/data/.ccs
 ENV CCS_DATA_DIR=/data/.ccs
 
