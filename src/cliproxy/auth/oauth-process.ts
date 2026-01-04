@@ -452,8 +452,12 @@ export function executeOAuthProcess(options: OAuthProcessOptions): Promise<Accou
       unregisterAuthSession(state.sessionId);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
+      log(`Process exited with code ${code} after ${elapsed}s`);
+
       if (code === 0) {
-        if (isAuthenticated(provider)) {
+        const hasToken = isAuthenticated(provider);
+        log(`Token check: isAuthenticated=${hasToken}`);
+        if (hasToken) {
           console.log('');
           console.log(ok(`Authentication successful (${elapsed}s)`));
 

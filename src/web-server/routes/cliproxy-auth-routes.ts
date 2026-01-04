@@ -297,6 +297,8 @@ router.post('/:provider/start', async (req: Request, res: Response): Promise<voi
   }
 
   try {
+    console.log(`[auth-start] Starting OAuth for ${provider}`);
+
     // Trigger OAuth flow - this opens browser and waits for completion
     const account = await triggerOAuth(provider as CLIProxyProvider, {
       add: true, // Always add mode from UI
@@ -304,7 +306,10 @@ router.post('/:provider/start', async (req: Request, res: Response): Promise<voi
       nickname: nickname || undefined,
       fromUI: true, // Enable project selection prompt in UI
       noIncognito, // Kiro: use normal browser if enabled
+      verbose: true, // Enable debug logging for troubleshooting
     });
+
+    console.log(`[auth-start] OAuth completed, account:`, account ? account.email : 'null');
 
     if (account) {
       res.json({
