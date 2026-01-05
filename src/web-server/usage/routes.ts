@@ -18,6 +18,7 @@ import {
   handleRefresh,
   handleStatus,
   handleInsights,
+  handleSource,
 } from './handlers';
 
 export { prewarmUsageCache, clearUsageCache, getLastFetchTimestamp } from './aggregator';
@@ -47,6 +48,9 @@ usageRoutes.post('/refresh', handleRefresh);
 
 // Status endpoint
 usageRoutes.get('/status', handleStatus);
+
+// Data source endpoint (local vs remote)
+usageRoutes.get('/source', handleSource);
 
 // Insights endpoint (anomaly detection)
 usageRoutes.get('/insights', handleInsights);

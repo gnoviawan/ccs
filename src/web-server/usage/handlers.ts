@@ -6,7 +6,7 @@
  */
 
 import type { Request, Response } from 'express';
-import type { DailyUsage, Anomaly, AnomalySummary, TokenBreakdown } from './types';
+import type { DailyUsage, HourlyUsage, Anomaly, AnomalySummary, TokenBreakdown } from './types';
 import { getModelPricing } from '../model-pricing';
 import {
   getCachedDailyData,
@@ -16,6 +16,16 @@ import {
   clearUsageCache,
   getLastFetchTimestamp,
 } from './aggregator';
+import { getProxyTarget } from '../../cliproxy/proxy-target-resolver';
+import {
+  fetchRawCliproxyUsage,
+  transformToUsageSummary,
+  transformToDailyUsage,
+  transformToHourlyUsage,
+  transformToModelUsage,
+  transformToMonthlyUsage,
+  filterDetailsByDateRange,
+} from './remote-transformer';
 
 // ============================================================================
 // Types
@@ -43,6 +53,48 @@ const ANOMALY_THRESHOLDS = {
   COST_SPIKE_MULTIPLIER: 2,
   HIGH_CACHE_READ_TOKENS: 1_000_000_000,
 };
+
+// ============================================================================
+// Remote Mode Detection
+// ============================================================================
+
+/** Cached proxy target to avoid repeated config reads within a request */
+let cachedProxyTarget: ReturnType<typeof getProxyTarget> | null = null;
+
+/**
+ * Get cached proxy target, loading config only once per module lifecycle.
+ * In production, config rarely changes so caching is safe.
+ */
+function getCachedProxyTarget(): ReturnType<typeof getProxyTarget> {
+  if (!cachedProxyTarget) {
+    cachedProxyTarget = getProxyTarget();
+  }
+  return cachedProxyTarget;
+}
+
+/**
+ * Clear cached proxy target (useful for testing or when config changes)
+ */
+export function clearProxyTargetCache(): void {
+  cachedProxyTarget = null;
+}
+
+/**
+ * Check if dashboard is running in remote mode (connected to remote CLIProxyAPI)
+ * Returns true if remote proxy is configured and enabled
+ */
+export function isRemoteMode(): boolean {
+  return getCachedProxyTarget().isRemote;
+}
+
+/**
+ * Get the remote host for display purposes
+ * Returns undefined if not in remote mode
+ */
+export function getRemoteHost(): string | undefined {
+  const target = getCachedProxyTarget();
+  return target.isRemote ? target.host : undefined;
+}
 
 // ============================================================================
 // Validation Helpers
@@ -334,6 +386,26 @@ export async function handleSummary(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      // Apply date filtering to remote data
+      const filteredUsage = filterDetailsByDateRange(rawUsage, since, until);
+      const summary = transformToUsageSummary(filteredUsage);
+      res.json({ success: true, data: summary });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const dailyData = await getCachedDailyData();
     const filtered = filterByDateRange(dailyData, since, until);
 
@@ -383,6 +455,36 @@ export async function handleDaily(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      const dailyData = transformToDailyUsage(rawUsage);
+      const filtered = filterByDateRange(dailyData, since, until);
+
+      const trends = filtered.map((day) => ({
+        date: day.date,
+        tokens: day.inputTokens + day.outputTokens,
+        inputTokens: day.inputTokens,
+        outputTokens: day.outputTokens,
+        cacheTokens: day.cacheCreationTokens + day.cacheReadTokens,
+        cost: Math.round(day.totalCost * 100) / 100,
+        modelsUsed: day.modelsUsed.length,
+      }));
+
+      res.json({ success: true, data: trends });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const dailyData = await getCachedDailyData();
     const filtered = filterByDateRange(dailyData, since, until);
 
@@ -409,6 +511,38 @@ export async function handleHourly(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      const hourlyData = transformToHourlyUsage(rawUsage);
+      const filtered = filterHourlyByDateRange(hourlyData, since, until);
+
+      const trends = filtered.map((hour) => ({
+        hour: hour.hour,
+        tokens: hour.inputTokens + hour.outputTokens,
+        inputTokens: hour.inputTokens,
+        outputTokens: hour.outputTokens,
+        cacheTokens: hour.cacheCreationTokens + hour.cacheReadTokens,
+        cost: Math.round(hour.totalCost * 100) / 100,
+        modelsUsed: hour.modelsUsed.length,
+        requests: hour.modelBreakdowns.length,
+      }));
+
+      const filledTrends = fillHourlyGaps(trends, since, until);
+      res.json({ success: true, data: filledTrends });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const hourlyData = await getCachedHourlyData();
 
     const filtered = (hourlyData || []).filter((h) => {
@@ -436,6 +570,25 @@ export async function handleHourly(
   }
 }
 
+/**
+ * Filter hourly data by date range
+ */
+function filterHourlyByDateRange(
+  data: HourlyUsage[],
+  since?: string,
+  until?: string
+): HourlyUsage[] {
+  if (!data || !Array.isArray(data)) return [];
+  if (!since && !until) return data;
+
+  return data.filter((h) => {
+    const hourDate = h.hour.slice(0, 10).replace(/-/g, '');
+    if (since && hourDate < since) return false;
+    if (until && hourDate > until) return false;
+    return true;
+  });
+}
+
 export async function handleModels(
   req: Request<object, object, object, UsageQuery>,
   res: Response
@@ -443,6 +596,66 @@ export async function handleModels(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      // Apply date filtering to remote data
+      const filteredUsage = filterDetailsByDateRange(rawUsage, since, until);
+      const modelBreakdowns = transformToModelUsage(filteredUsage);
+      const totalTokens = modelBreakdowns.reduce(
+        (sum, m) => sum + m.inputTokens + m.outputTokens,
+        0
+      );
+
+      const result = modelBreakdowns.map((m) => {
+        const pricing = getModelPricing(m.modelName);
+        const inputCost = (m.inputTokens / 1_000_000) * pricing.inputPerMillion;
+        const outputCost = (m.outputTokens / 1_000_000) * pricing.outputPerMillion;
+        const cacheCreationCost =
+          (m.cacheCreationTokens / 1_000_000) * pricing.cacheCreationPerMillion;
+        const cacheReadCost = (m.cacheReadTokens / 1_000_000) * pricing.cacheReadPerMillion;
+        const ioRatio = m.outputTokens > 0 ? m.inputTokens / m.outputTokens : 0;
+
+        return {
+          model: m.modelName,
+          tokens: m.inputTokens + m.outputTokens,
+          inputTokens: m.inputTokens,
+          outputTokens: m.outputTokens,
+          cacheCreationTokens: m.cacheCreationTokens,
+          cacheReadTokens: m.cacheReadTokens,
+          cacheTokens: m.cacheCreationTokens + m.cacheReadTokens,
+          cost: Math.round(m.cost * 100) / 100,
+          percentage:
+            totalTokens > 0
+              ? Math.round(((m.inputTokens + m.outputTokens) / totalTokens) * 1000) / 10
+              : 0,
+          costBreakdown: {
+            input: { tokens: m.inputTokens, cost: Math.round(inputCost * 100) / 100 },
+            output: { tokens: m.outputTokens, cost: Math.round(outputCost * 100) / 100 },
+            cacheCreation: {
+              tokens: m.cacheCreationTokens,
+              cost: Math.round(cacheCreationCost * 100) / 100,
+            },
+            cacheRead: { tokens: m.cacheReadTokens, cost: Math.round(cacheReadCost * 100) / 100 },
+          },
+          ioRatio: Math.round(ioRatio * 10) / 10,
+        };
+      });
+
+      res.json({ success: true, data: result });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const dailyData = await getCachedDailyData();
     const filtered = filterByDateRange(dailyData, since, until);
 
@@ -528,6 +741,24 @@ export async function handleSessions(
   res: Response
 ): Promise<void> {
   try {
+    // Remote mode: session data is not available (CLIProxyAPI doesn't track sessionIds)
+    if (isRemoteMode()) {
+      res.json({
+        success: true,
+        data: {
+          sessions: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+          hasMore: false,
+          message:
+            'Session data not available in remote mode. CLIProxyAPI aggregates data without session tracking.',
+        },
+      });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
     const limit = validateLimit(req.query.limit);
@@ -573,6 +804,36 @@ export async function handleMonthly(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      const monthlyData = transformToMonthlyUsage(rawUsage);
+      const filtered = filterMonthlyByDateRange(monthlyData, since, until);
+
+      const result = filtered.map((m) => ({
+        month: m.month,
+        tokens: m.inputTokens + m.outputTokens,
+        inputTokens: m.inputTokens,
+        outputTokens: m.outputTokens,
+        cacheTokens: m.cacheCreationTokens + m.cacheReadTokens,
+        cost: Math.round(m.totalCost * 100) / 100,
+        modelsUsed: m.modelsUsed.length,
+      }));
+
+      res.json({ success: true, data: result.sort((a, b) => a.month.localeCompare(b.month)) });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const monthlyData = await getCachedMonthlyData();
 
     const filtered =
@@ -601,6 +862,25 @@ export async function handleMonthly(
   }
 }
 
+/**
+ * Filter monthly data by date range
+ */
+function filterMonthlyByDateRange(
+  data: import('./types').MonthlyUsage[],
+  since?: string,
+  until?: string
+): import('./types').MonthlyUsage[] {
+  if (!data || !Array.isArray(data)) return [];
+  if (!since && !until) return data;
+
+  return data.filter((m) => {
+    const monthDate = m.month.replace('-', '') + '01';
+    if (since && monthDate < since) return false;
+    if (until && monthDate > until) return false;
+    return true;
+  });
+}
+
 export function handleRefresh(_req: Request, res: Response): void {
   clearUsageCache();
   res.json({ success: true, message: 'Usage cache cleared' });
@@ -614,6 +894,23 @@ export function handleStatus(_req: Request, res: Response): void {
   });
 }
 
+/**
+ * Handle /api/usage/source endpoint
+ * Returns the current data source (local JSONL or remote CLIProxyAPI)
+ */
+export function handleSource(_req: Request, res: Response): void {
+  const remote = isRemoteMode();
+  const host = getRemoteHost();
+
+  res.json({
+    success: true,
+    data: {
+      source: remote ? 'remote' : 'local',
+      host: host || undefined,
+    },
+  });
+}
+
 export async function handleInsights(
   req: Request<object, object, object, UsageQuery>,
   res: Response
@@ -621,6 +918,29 @@ export async function handleInsights(
   try {
     const since = validateDate(req.query.since);
     const until = validateDate(req.query.until);
+
+    // Remote mode: fetch from CLIProxyAPI and transform to daily data for anomaly detection
+    if (isRemoteMode()) {
+      const rawUsage = await fetchRawCliproxyUsage();
+      if (!rawUsage) {
+        res.status(503).json({
+          success: false,
+          error: 'Unable to fetch usage data from remote CLIProxyAPI. Check connection and auth.',
+        });
+        return;
+      }
+
+      // Apply date filtering and transform to daily data
+      const filteredUsage = filterDetailsByDateRange(rawUsage, since, until);
+      const dailyData = transformToDailyUsage(filteredUsage);
+      const anomalies = detectAnomalies(dailyData);
+      const summary = summarizeAnomalies(anomalies);
+
+      res.json({ success: true, data: { anomalies, summary } });
+      return;
+    }
+
+    // Local mode: use JSONL aggregator
     const dailyData = await getCachedDailyData();
     const filtered = filterByDateRange(dailyData, since, until);
     const anomalies = detectAnomalies(filtered);

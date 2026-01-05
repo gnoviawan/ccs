@@ -1,14 +1,24 @@
 /**
  * Analytics Header Component
  *
- * Title, date filter, 24H button, and refresh controls.
+ * Title, date filter, 24H button, refresh controls, and data source indicator.
  */
 
 import type { DateRange } from 'react-day-picker';
 import { subDays, startOfMonth } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { DateRangeFilter } from '@/components/analytics/date-range-filter';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Server, HardDrive } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+
+/** Response from /api/usage/source endpoint */
+interface DataSourceResponse {
+  success: boolean;
+  data: {
+    source: 'local' | 'remote';
+    host?: string;
+  };
+}
 
 interface AnalyticsHeaderProps {
   dateRange: DateRange | undefined;
@@ -29,6 +39,21 @@ export function AnalyticsHeader({
   lastUpdatedText,
   viewMode,
 }: AnalyticsHeaderProps) {
+  // Fetch data source info
+  const { data: sourceData } = useQuery<DataSourceResponse>({
+    queryKey: ['usage-source'],
+    queryFn: async () => {
+      const res = await fetch('/api/usage/source');
+      if (!res.ok) throw new Error('Failed to fetch data source');
+      return res.json();
+    },
+    staleTime: 60 * 1000, // Cache for 1 minute
+    retry: false,
+  });
+
+  const isRemote = sourceData?.data?.source === 'remote';
+  const remoteHost = sourceData?.data?.host;
+
   return (
     <div className="flex items-center justify-between shrink-0">
       <div>
@@ -36,6 +61,34 @@ export function AnalyticsHeader({
         <p className="text-sm text-muted-foreground">Track usage & insights</p>
       </div>
       <div className="flex items-center gap-2">
+        {/* Data Source Indicator */}
+        {sourceData && (
+          <div
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${
+              isRemote
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300'
+            }`}
+            title={
+              isRemote
+                ? `Data from remote CLIProxyAPI at ${remoteHost}`
+                : 'Data from local JSONL files'
+            }
+          >
+            {isRemote ? (
+              <>
+                <Server className="w-3 h-3" />
+                <span>Remote{remoteHost ? `: ${remoteHost}` : ''}</span>
+              </>
+            ) : (
+              <>
+                <HardDrive className="w-3 h-3" />
+                <span>Local</span>
+              </>
+            )}
+          </div>
+        )}
+
         <Button
           variant={viewMode === 'hourly' ? 'default' : 'outline'}
           size="sm"
