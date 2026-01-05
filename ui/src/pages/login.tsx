@@ -7,12 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Lock, AlertCircle } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
 
 export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { checkAuth } = useAuth();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,6 +31,8 @@ export function LoginPage() {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // Update auth context before navigating
+        await checkAuth();
         navigate('/', { replace: true });
       } else {
         setError(data.error || 'Invalid password');
